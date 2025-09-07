@@ -1,0 +1,41 @@
+import { Palette } from "std-widgets.slint";
+
+export enum Page {
+  Start,
+  AddCode,
+  EditCode,
+}
+
+export component TopMenuItem inherits Rectangle {
+  in-out property <image> icon <=> image.source;
+  callback clicked <=> touchArea.clicked;
+
+  width: 4rem;
+
+  image := Image {
+    height: parent.height / 2;
+    image-fit: contain;
+    colorize: Palette.foreground;
+  }
+
+  touchArea := TouchArea {}
+}
+
+export component TopMenuItems inherits HorizontalLayout {
+    alignment: end;
+    padding-right: 1rem;
+}
+
+export component TopMenu inherits Rectangle {
+  callback back_clicked();
+
+  height: 5rem;
+  background: Palette.alternate-background;
+
+  HorizontalLayout {
+    padding-left: 1rem;
+
+    // The child should be a `TopMenuItems` component.
+    @children
+  }
+}

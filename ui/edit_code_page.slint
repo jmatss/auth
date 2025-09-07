@@ -1,0 +1,50 @@
+
+import { ListView, Palette, ScrollView, LineEdit, Button, StandardButton } from "std-widgets.slint";
+import { Code } from "codes_page.slint";
+
+export component EditCodePage inherits ScrollView {
+  in property <Code> code;
+  property <string> button_text: "Nothing";
+  callback edit_code_name(code: Code, new_name: string);
+  callback remove_code(code: Code);
+  callback navigate_to_start_page();
+
+  mouse-drag-pan-enabled: true;
+  horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
+
+  popup := PopupWindow {
+    width: parent.width - 2rem;
+    
+    Dialog {
+      Text {
+        text: "Test Popup";
+      }
+      StandardButton {
+        kind: apply;
+        clicked => {
+          button_text = "Apply Clicked";
+        }
+      }
+      StandardButton {
+        kind: cancel;
+        clicked => {
+          button_text = "Cancel Clicked";
+        }
+      }
+    }
+  }
+
+  VerticalLayout {
+    t := LineEdit {
+      text: code.name;
+    }
+
+    StandardButton {
+      kind: apply;
+      clicked => {
+        root.edit_code_name(code, t.text);
+        root.navigate_to_start_page();
+      }
+    }
+  }
+}

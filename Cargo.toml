@@ -1,0 +1,17 @@
+[package]
+name = "authenticator"
+version = "0.1.0"
+edition = "2024"
+build = "src/build.rs"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+slint = { version = "1.13", features = ["std", "backend-android-activity-06"] }
+i-slint-backend-android-activity = "1.13"
+i-slint-core = "1.13"
+android-activity = "0.6"
+
+[build-dependencies]
+slint-build = "1.13"

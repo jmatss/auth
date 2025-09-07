@@ -1,0 +1,79 @@
+
+import { ListView, Palette } from "std-widgets.slint";
+
+export struct Code {
+  id: string,
+  name: string,
+  code: string,
+  expire_countdown: duration,
+}
+
+export component CodesPage inherits ListView {
+  in property <[Code]> codes;
+  callback navigate_to_edit_code_page(Code);
+
+  mouse-drag-pan-enabled: true;
+  horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
+
+  for item in codes : VerticalLayout {
+    padding-top: 0.5rem;
+
+    Rectangle {
+      background: Palette.alternate-background;
+
+      VerticalLayout {
+        HorizontalLayout {
+          padding-left: 2rem;
+          padding-right: 1rem;
+
+          Rectangle {
+            horizontal-stretch: 1;
+
+            Rectangle {
+              height: nameText.height;
+              y: parent.height / 2 - nameText.height / 2;
+
+              nameText := Text {
+                x: 0;
+                font-size: 1.5rem;
+                text: item.name;
+                wrap: char-wrap;
+              }
+            }
+
+            editCodeTouchArea := TouchArea {
+              clicked => root.navigate_to_edit_code_page(item);
+            }
+          }
+
+          VerticalLayout {
+            padding-top: 0.5rem;
+            padding-bottom: 0.5rem;
+
+            Rectangle {
+              height: nameCode.height;
+              background: Palette.alternate-background;
+
+              nameCode := Text {
+                text: item.code;
+                font-size: 4rem;
+                color: Palette.selection-background;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    countDown := Rectangle { 
+      height: 0.5rem;
+      background: Palette.selection-background;
+
+      Rectangle {
+        background: #780606;
+        width: parent.width * (mod(animation-tick(), item.expire-countdown) / item.expire-countdown);
+        x: 0;
+      }
+    }
+  }
+}

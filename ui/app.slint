@@ -1,0 +1,94 @@
+import { Palette, ListView } from "std-widgets.slint";
+import { Page, TopMenu, TopMenuItem, TopMenuItems } from "top_menu.slint";
+import { Code, CodesPage } from "codes_page.slint";
+import { EditCodePage } from "edit_code_page.slint";
+import { AddCodePage } from "add_code_page.slint";
+
+export component MainWindow inherits Window {
+  in property <[Code]> codes;
+  callback add_code(name: string, secret: string);
+
+  property <Page> selected_page;
+  property <Code> code_being_edited;
+
+  forward-focus: focus;
+
+  function navigate_to_page(page: Page) {
+    root.selected_page = page;
+  }
+
+  focus := FocusScope {
+    key-pressed(event) => {
+      if (event.text == Key.Back && root.selected_page != Page.Start) {
+        root.navigate_to_page(Page.Start);
+        return accept;
+      } else {
+        return reject;
+      }
+    }
+  }
+
+  VerticalLayout {
+    if root.selected_page == Page.Start: VerticalLayout {
+      TopMenu {
+        TopMenuItems {
+          TopMenuItem {
+            icon: @image-url("images/plus.svg");
+            clicked => root.navigate_to_page(Page.AddCode);
+          }
+          TopMenuItem {
+            icon: @image-url("images/settings.svg");
+            clicked => {}
+          }
+        }
+      }
+      
+      codesPage := CodesPage {
+        codes: codes;
+        navigate_to_edit_code_page(code) => {
+          code_being_edited = code;
+          root.navigate_to_page(Page.EditCode);
+        }
+      }
+    }
+
+    if root.selected_page == Page.AddCode: VerticalLayout {
+      TopMenu {
+        TopMenuItem {
+          icon: @image-url("images/arrow_left.svg");
+          TouchArea {
+            clicked => root.navigate_to_page(Page.Start);
+          }
+        }
+      }
+
+      addCodePage := AddCodePage {
+        add_code(name, secret) => root.add_code(name, secret);
+        navigate_to_start_page => root.navigate_to_page(Page.Start);
+      }
+    }
+
+    if root.selected_page == Page.EditCode: VerticalLayout {
+      TopMenu {
+        TopMenuItem {
+          icon: @image-url("images/arrow_left.svg");
+          TouchArea {
+            clicked => { root.selected_page = Page.Start; }
+          }
+        }
+
+        TopMenuItems {
+          TopMenuItem {
+            icon: @image-url("images/minus.svg");
+            clicked => editCodePage.remove_code(code_being_edited);
+          }
+        }
+      }
+
+      editCodePage := EditCodePage {
+        code: code_being_edited;
+        navigate_to_start_page => root.navigate_to_page(Page.Start);
+      }
+    }
+  }
+}

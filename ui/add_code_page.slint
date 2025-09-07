@@ -1,0 +1,24 @@
+
+import { ListView, Palette, ScrollView, LineEdit, Button, StandardButton } from "std-widgets.slint";
+import { Code } from "codes_page.slint";
+
+export component AddCodePage inherits Rectangle {
+  callback add_code(name: string, secret: string);
+  callback navigate_to_start_page();
+
+  background: purple;
+
+  VerticalLayout {
+    Text {
+      text: "SCANNING QR CODE";
+    }
+
+    Button {
+      text: "Add";
+      clicked => {
+        root.add_code("NAME", "SECRET");
+        root.navigate_to_start_page();
+      }
+    }
+  }
+}
