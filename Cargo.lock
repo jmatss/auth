@@ -458,6 +458,9 @@ dependencies = [
  "android-activity 0.6.0",
  "i-slint-backend-android-activity",
  "i-slint-core",
+ "image",
+ "jni",
+ "ndk-sys 0.6.0+11769913",
  "slint",
  "slint-build",
 ]

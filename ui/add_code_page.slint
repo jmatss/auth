@@ -3,18 +3,21 @@ import { ListView, Palette, ScrollView, LineEdit, Button, StandardButton } from 
 import { Code } from "codes_page.slint";
 
 export component AddCodePage inherits Rectangle {
+  in property <image> camera <=> camera.source;
   callback add_code(name: string, secret: string);
   callback navigate_to_start_page();
 
-  background: purple;
+  camera := Image {
+    image-fit: contain;
+  }
 
   VerticalLayout {
-    Text {
-      text: "SCANNING QR CODE";
+    Rectangle {
+      vertical-stretch: 1;
     }
 
     Button {
-      text: "Add";
+      text: "temp";
       clicked => {
         root.add_code("NAME", "SECRET");
         root.navigate_to_start_page();

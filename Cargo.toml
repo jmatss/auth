@@ -7,11 +7,20 @@ build = "src/build.rs"
 [lib]
 crate-type = ["cdylib"]
 
+[[package.metadata.android.uses_permission]]
+name = "android.permission.CAMERA"
+
+[package.metadata.android.sdk]
+target_sdk_version = 28
+
 [dependencies]
 slint = { version = "1.13", features = ["std", "backend-android-activity-06"] }
 i-slint-backend-android-activity = "1.13"
 i-slint-core = "1.13"
 android-activity = "0.6"
+jni = "0.21.1"
+ndk-sys = "0.6.0"
+image = "0.25.8"
 
 [build-dependencies]
 slint-build = "1.13"

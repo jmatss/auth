@@ -1,13 +1,24 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{Arc, RwLock},
+};
 
 use android_activity::MainEvent;
 use i_slint_backend_android_activity::AndroidPlatform;
 use i_slint_core::{items::FocusReason, window::WindowInner};
 use slint::android::AndroidApp;
 
-use crate::codes::{add_code, load_codes};
+use crate::{
+    camera::CameraContext,
+    codes::{add_code, load_codes},
+    qr::{start_qr_scanner, stop_qr_scanner},
+};
 
+mod camera;
 mod codes;
+mod java;
+mod qr;
 
 slint::include_modules!();
 
@@ -34,7 +45,7 @@ fn android_main(app: AndroidApp) {
     let main_window_clone = main_window_rc.clone();
 
     slint::platform::set_platform(Box::new(AndroidPlatform::new_with_event_listener(
-        app,
+        app.clone(),
         move |e| match e {
             i_slint_backend_android_activity::android_activity::PollEvent::Main(
                 MainEvent::InputAvailable,
@@ -48,9 +59,6 @@ fn android_main(app: AndroidApp) {
                             true,
                             FocusReason::WindowActivation,
                         );
-                        eprintln!("IS NONE");
-                    } else {
-                        eprintln!("IS SOME");
                     }
                 }
             }
@@ -60,10 +68,23 @@ fn android_main(app: AndroidApp) {
     .unwrap();
 
     let main_window = MainWindow::new().unwrap();
-    let main_window_weak = main_window.as_weak();
+    let main_window_add = main_window.as_weak();
+    let main_window_qr = main_window.as_weak();
+
+    let camera_context: Arc<RwLock<Option<CameraContext>>> = Arc::default();
+    let camera_context_start = Arc::clone(&camera_context);
+    let camera_context_stop = Arc::clone(&camera_context);
 
     main_window.set_codes(load_codes());
-    main_window.on_add_code(move |a, b| add_code(&main_window_weak, a, b));
+    main_window.on_add_code(move |name, secret| add_code(&main_window_add, name, secret));
+    main_window.on_start_qr_scanner(move || {
+        start_qr_scanner(
+            main_window_qr.clone(),
+            app.clone(),
+            Arc::clone(&camera_context_start),
+        )
+    });
+    main_window.on_stop_qr_scanner(move || stop_qr_scanner(Arc::clone(&camera_context_stop)));
 
     *main_window_rc.borrow_mut() = Some(main_window);
     main_window_rc.borrow().as_ref().unwrap().run().unwrap();

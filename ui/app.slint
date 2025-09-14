@@ -1,12 +1,17 @@
-import { Palette, ListView } from "std-widgets.slint";
 import { Page, TopMenu, TopMenuItem, TopMenuItems } from "top_menu.slint";
 import { Code, CodesPage } from "codes_page.slint";
 import { EditCodePage } from "edit_code_page.slint";
 import { AddCodePage } from "add_code_page.slint";
 
 export component MainWindow inherits Window {
+  // Contains all codes (and context) currently existing in the application.
   in property <[Code]> codes;
+  // Will be updated with images from the phone camera (when the QR scanner is running).
+  in property <image> camera;
+
   callback add_code(name: string, secret: string);
+  callback start_qr_scanner() -> bool;
+  callback stop_qr_scanner();
 
   property <Page> selected_page;
   property <Code> code_being_edited;
@@ -14,6 +19,16 @@ export component MainWindow inherits Window {
   forward-focus: focus;
 
   function navigate_to_page(page: Page) {
+    if (page == Page.AddCode && root.selected_page != Page.AddCode) {
+      let prompted_for_permissions = !root.start_qr_scanner();
+      if prompted_for_permissions { 
+        // Do not navigate to "add-page" before the user has granted camera permissions.
+        return;
+      }
+    } else if root.selected_page == Page.AddCode && page != Page.AddCode {
+      root.stop_qr_scanner();
+    }
+
     root.selected_page = page;
   }
 
@@ -63,6 +78,7 @@ export component MainWindow inherits Window {
       }
 
       addCodePage := AddCodePage {
+        camera: root.camera;
         add_code(name, secret) => root.add_code(name, secret);
         navigate_to_start_page => root.navigate_to_page(Page.Start);
       }
