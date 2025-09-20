@@ -1,17 +1,16 @@
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::{Arc, RwLock},
-};
+use std::{cell::RefCell, rc::Rc};
 
 use android_activity::MainEvent;
+use async_compat::Compat;
 use i_slint_backend_android_activity::AndroidPlatform;
 use i_slint_core::{items::FocusReason, window::WindowInner};
-use jni::objects::GlobalRef;
-use slint::android::AndroidApp;
+
+use slint::{ModelRc, VecModel, Weak, android::AndroidApp};
+use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 use crate::{
-    codes::{add_code, load_codes},
+    codes::{CodeMessage, code_handler},
+    java::{JavaHelpers, load_helper_objects},
     qr::{start_qr_scanner, stop_qr_scanner},
 };
 
@@ -20,6 +19,15 @@ mod java;
 mod qr;
 
 slint::include_modules!();
+
+pub struct AppState {
+    app: AndroidApp,
+    main_window: Weak<MainWindow>,
+    codes: Rc<VecModel<Code>>,
+    java_helpers: JavaHelpers,
+    /// The `codes_handler` has the corresponding Receiver.
+    sender: UnboundedSender<CodeMessage>,
+}
 
 #[unsafe(no_mangle)]
 fn android_main(app: AndroidApp) {
@@ -66,30 +74,35 @@ fn android_main(app: AndroidApp) {
     )))
     .unwrap();
 
-    let app_start = app.clone();
-    let app_stop = app.clone();
-
     let main_window = MainWindow::new().unwrap();
-    let main_window_add = main_window.as_weak();
-    let main_window_start = main_window.as_weak();
 
-    let java_camera_helper: Arc<RwLock<Option<GlobalRef>>> = Arc::default();
-    let java_camera_helper_start = Arc::clone(&java_camera_helper);
-    let java_camera_helper_stop = Arc::clone(&java_camera_helper);
+    let java_helpers = load_helper_objects(&app);
+    let codes: Rc<VecModel<_>> = Rc::new(VecModel::from(Vec::new()));
+    let (sender, receiver) = unbounded_channel::<CodeMessage>();
 
-    main_window.set_codes(load_codes());
-    main_window.on_add_code(move |name, secret| add_code(&main_window_add, name, secret));
-    main_window.on_start_qr_scanner(move || {
-        start_qr_scanner(
-            app_start.clone(),
-            Arc::clone(&java_camera_helper_start),
-            main_window_start.clone(),
-        )
+    let state = Rc::new(AppState {
+        app,
+        codes: Rc::clone(&codes),
+        main_window: main_window.as_weak(),
+        java_helpers,
+        sender,
     });
-    main_window.on_stop_qr_scanner(move || {
-        stop_qr_scanner(app_stop.clone(), Arc::clone(&java_camera_helper_stop))
-    });
+    // Make raw pointer that can be sent over to Java code. We need to make sure to
+    // drop this leaked Box at the end of this function.
+    let state_raw = Box::into_raw(Box::new(Rc::clone(&state)));
+
+    let state_clone = Rc::clone(&state);
+    let _ =
+        slint::spawn_local(Compat::new(code_handler(Rc::clone(&state_clone), receiver))).unwrap();
+
+    main_window.set_codes(ModelRc::from(Rc::clone(&codes)));
+    let state_clone = Rc::clone(&state);
+    main_window.on_start_qr_scanner(move || start_qr_scanner(Rc::clone(&state_clone), state_raw));
+    let state_clone = Rc::clone(&state);
+    main_window.on_stop_qr_scanner(move || stop_qr_scanner(Rc::clone(&state_clone)));
 
     *main_window_rc.borrow_mut() = Some(main_window);
     main_window_rc.borrow().as_ref().unwrap().run().unwrap();
+
+    std::mem::drop(unsafe { Box::from_raw(state_raw) });
 }

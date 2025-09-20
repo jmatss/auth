@@ -2,10 +2,16 @@
 import { ListView, Palette } from "std-widgets.slint";
 
 export struct Code {
-  id: string,
+  unique_idx: int,
   name: string,
+  issuer: string,
   code: string,
-  expire_countdown: duration,
+  /// The exact time a Code is valid (usually 30 sec).
+  step: duration,
+  /// The "unix time" when this code struct was created.
+  start_unix_time: duration,
+  /// The "unix time" when this code gets invalid. Used for time keeping in rust.
+  valid_until_unix_time: duration,
 }
 
 export component CodesPage inherits ListView {
@@ -16,7 +22,33 @@ export component CodesPage inherits ListView {
   horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
 
   for item in codes : VerticalLayout {
+    property <Code> local_item: item;
+    changed local_item => {
+      // Hack to reset timer when new item is set. Unable to do with normal binding.
+      timer.running_duration = 0;
+      timer.running = true;
+      timer.start_unix_time = item.start_unix_time;
+      timer.valid_until_unix_time = item.valid-until-unix-time;
+    }
+
     padding-top: 0.5rem;
+
+    timer := Timer {
+      property <duration> running_duration;
+      property <duration> start_unix_time: item.start_unix_time;
+      property <duration> valid_until_unix_time: item.valid_until_unix_time;
+
+      interval: 100ms;
+
+      triggered => {
+        self.running_duration += timer.interval;
+        if (self.running_duration + self.start_unix_time >= self.valid_until_unix_time) {
+          // The code is now invalid. We will just wait and assume that the backend will
+          // replace this `item` with a new one.
+          self.running = false;
+        }
+      }
+    }
 
     Rectangle {
       background: Palette.alternate-background;
@@ -36,7 +68,7 @@ export component CodesPage inherits ListView {
               nameText := Text {
                 x: 0;
                 font-size: 1.5rem;
-                text: item.name;
+                text: item.issuer.is-empty ? item.name : item.issuer + " (" + item.name + ")";
                 wrap: char-wrap;
               }
             }
@@ -71,7 +103,7 @@ export component CodesPage inherits ListView {
 
       Rectangle {
         background: #780606;
-        width: parent.width * (mod(animation-tick(), item.expire-countdown) / item.expire-countdown);
+        width: parent.width * ((item.step - (timer.valid_until_unix_time - timer.start_unix_time) + timer.running_duration) / item.step);
         x: 0;
       }
     }

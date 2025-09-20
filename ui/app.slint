@@ -9,7 +9,7 @@ export component MainWindow inherits Window {
   // Will be updated with images from the phone camera (when the QR scanner is running).
   in property <image> camera;
 
-  callback add_code(name: string, secret: string);
+  callback add_code(url: string);
   callback start_qr_scanner() -> bool;
   callback stop_qr_scanner();
 
@@ -18,7 +18,7 @@ export component MainWindow inherits Window {
 
   forward-focus: focus;
 
-  function navigate_to_page(page: Page) {
+  public function navigate_to_page(page: Page) {
     if (page == Page.AddCode && root.selected_page != Page.AddCode) {
       let prompted_for_permissions = !root.start_qr_scanner();
       if prompted_for_permissions { 
@@ -79,7 +79,7 @@ export component MainWindow inherits Window {
 
       addCodePage := AddCodePage {
         camera: root.camera;
-        add_code(name, secret) => root.add_code(name, secret);
+        add_code(url) => root.add_code(url);
         navigate_to_start_page => root.navigate_to_page(Page.Start);
       }
     }

@@ -4,7 +4,7 @@ import { Code } from "codes_page.slint";
 
 export component AddCodePage inherits Rectangle {
   in property <image> camera <=> camera.source;
-  callback add_code(name: string, secret: string);
+  callback add_code(url: string);
   callback navigate_to_start_page();
 
   camera := Image {
@@ -21,7 +21,7 @@ export component AddCodePage inherits Rectangle {
     Button {
       text: "temp123";
       clicked => {
-        root.add_code("NAME", "SECRET");
+        root.add_code("otpauth://totp/Example1:test@gmail.com?secret=JBSWY3DPEHPK3PXP&issuer=Example2");
         root.navigate_to_start_page();
       }
     }

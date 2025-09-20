@@ -20,6 +20,10 @@ i-slint-core = "1.13"
 android-activity = "0.6"
 jni = "0.21.1"
 yuv = { version = "0.8.7", features = ["geometry"] }
+rqrr = "0.10.0"
+totp-rs = { version = "5.7.0", features = ["otpauth"] }
+tokio = { version = "1.47.1", features = ["sync", "time"] }
+async-compat = "0.2.5"
 
 [build-dependencies]
 android-build = "0.1.3"

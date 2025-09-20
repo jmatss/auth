@@ -109,53 +109,52 @@ public class CameraHelper {
     public final static int TEMPLATE_PREVIEW = 1;
 
     private final Activity activity;
-    /*
-     * Pointer to rust object of type
-     * `slint::Weak<slint_generatedMainWindow::MainWindow>`.
-     */
-    private final long slintMainWindow;
 
     private final Executor executor;
 
+    private boolean isRunning;
     private String cameraId;
     private CameraDevice device;
     private ImageReader imageReader;
 
-    public CameraHelper(Activity activity, long slintMainWindow) {
+    /*
+     * Pointer to rust object of type `std::rc::Rc<AppState>`.
+     */
+    private long appState;
+
+    public CameraHelper(Activity activity) {
         this.activity = activity;
-        this.slintMainWindow = slintMainWindow;
         this.executor = Executors.newCachedThreadPool();
     }
 
     public static native void handleImage(long slintMainWindow, byte[] planeY, int strideY, byte[] planeU, int strideU,
             byte[] planeV, int strideV, int rotation, int width, int height);
 
-    public void start() throws CameraAccessException {
+    public boolean isRunning() {
+        return this.isRunning;
+    }
+
+    public void start(long appState) throws CameraAccessException {
         CameraManager cameraManager = (CameraManager) this.activity.getSystemService(CAMERA_SERVICE);
+
+        this.appState = appState;
         this.cameraId = this.selectCameraId(cameraManager);
 
         cameraManager.openCamera(cameraId, this.executor, new CameraDeviceHandler(this));
     }
 
-    /**
-     * Stops the camera and returns the `slintMainWindow`.
-     * 
-     * The `slintMainWindow` is a raw pointer to a leaked Box in the rust code. So
-     * the caller of this function needs to do a `Box::from_raw(...)` on the
-     * returned object to ensure that the object is dropped correctly.
-     * 
-     * @return raw pointer to the slint MainWindow
-     */
-    public long stop() {
+    public void stop() {
+        this.isRunning = false;
+
         if (this.imageReader != null) {
             this.imageReader.close();
             this.imageReader = null;
         }
+
         if (this.device != null) {
             this.device.close();
             this.device = null;
         }
-        return this.slintMainWindow;
     }
 
     void setupDevice(CameraDevice device) {
@@ -190,7 +189,7 @@ public class CameraHelper {
                     }
                 }
 
-                handleImage(this.slintMainWindow, data[0], stride[0], data[1], stride[1], data[2], stride[2],
+                handleImage(this.appState, data[0], stride[0], data[1], stride[1], data[2], stride[2],
                         imageRotation, width, height);
             }, new Handler(Looper.getMainLooper()));
 
@@ -210,6 +209,8 @@ public class CameraHelper {
             CaptureRequest.Builder requestBuilder = device.createCaptureRequest(TEMPLATE_PREVIEW);
             requestBuilder.addTarget(surface);
             session.setRepeatingRequest(requestBuilder.build(), null, null);
+            
+            this.isRunning = true;
         } catch (Exception e) {
             throw new RuntimeException(e); // TODO
         }

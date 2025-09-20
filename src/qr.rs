@@ -1,31 +1,31 @@
-use std::sync::{Arc, RwLock};
+use std::rc::Rc;
 
-use android_activity::AndroidApp;
 use jni::{
-    JNIEnv, JavaVM, NativeMethod,
-    objects::{GlobalRef, JByteArray, JClass, JObject, JValue},
+    JNIEnv, JavaVM,
+    objects::{JByteArray, JClass},
     sys::{jint, jlong},
 };
-use slint::{Rgb8Pixel, SharedPixelBuffer, Weak};
+use rqrr::PreparedImage;
+use slint::{Rgb8Pixel, SharedPixelBuffer};
+use totp_rs::TOTP;
 use yuv::{RotationMode, YuvPlanarImage, YuvRange, YuvStandardMatrix, rotate_rgb, yuv420_to_rgb};
 
 use crate::{
-    MainWindow,
+    AppState, Page,
+    codes::CodeMessage,
     java::{has_permission, request_permission},
 };
 
-pub fn start_qr_scanner(
-    app: AndroidApp,
-    java_camera_helper: Arc<RwLock<Option<GlobalRef>>>,
-    main_window: Weak<MainWindow>,
-) -> bool {
-    if java_camera_helper.read().unwrap().is_some() {
-        // Camera already setup and running.
+pub fn start_qr_scanner(state: Rc<AppState>, state_raw: *mut Rc<AppState>) -> bool {
+    let vm = unsafe { JavaVM::from_raw(state.app.vm_as_ptr() as *mut _).unwrap() };
+    let mut env = vm.attach_current_thread().unwrap();
+
+    if state.java_helpers.is_camera_running(&mut env) {
         return true;
     }
 
-    if !has_permission(&app) {
-        request_permission(&app);
+    if !has_permission(&state.app) {
+        request_permission(&state.app);
 
         // HACK: The `request_permission` is async. I'm unable to find a way to get a callback
         //       after the user has given the permission. So to prevent the code below to run
@@ -36,102 +36,25 @@ pub fn start_qr_scanner(
         return false;
     }
 
-    let main_window_raw = Box::into_raw(Box::new(main_window));
-    *java_camera_helper.write().unwrap() = Some(create_camera_helper(&app, main_window_raw));
+    state.java_helpers.start_camera(&mut env, state_raw);
 
     return true;
 }
 
-pub fn stop_qr_scanner(app: AndroidApp, java_camera_helper: Arc<RwLock<Option<GlobalRef>>>) {
-    if let Some(camera_helper) = &*java_camera_helper.read().unwrap() {
-        let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr() as *mut _).unwrap() };
-        let mut env = vm.attach_current_thread().unwrap();
-
-        let main_window = env
-            .call_method(camera_helper, "stop", "()J", &[])
-            .unwrap()
-            .j()
-            .unwrap();
-
-        unsafe { std::mem::drop(Box::from_raw(main_window as *mut Weak<MainWindow>)) }
-    }
-
-    *java_camera_helper.write().unwrap() = None;
-}
-
-fn create_camera_helper(app: &AndroidApp, slint_main_window: *mut Weak<MainWindow>) -> GlobalRef {
-    let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr() as *mut _).unwrap() };
+pub fn stop_qr_scanner(state: Rc<AppState>) {
+    let vm = unsafe { JavaVM::from_raw(state.app.vm_as_ptr() as *mut _).unwrap() };
     let mut env = vm.attach_current_thread().unwrap();
-    let activity = unsafe { JObject::from_raw(app.activity_as_ptr() as *mut _) };
 
-    let dex_data = include_bytes!(concat!(env!("OUT_DIR"), "/classes.dex"));
-
-    let dex_buffer = unsafe {
-        env.new_direct_byte_buffer(dex_data.as_ptr() as *mut _, dex_data.len())
-            .unwrap()
-    };
-
-    let class_loader = env
-        .call_method(
-            &activity,
-            "getClassLoader",
-            "()Ljava/lang/ClassLoader;",
-            &[],
-        )
-        .unwrap()
-        .l()
-        .unwrap();
-
-    let dex_class_loader = env
-        .new_object(
-            "dalvik/system/InMemoryDexClassLoader",
-            "(Ljava/nio/ByteBuffer;Ljava/lang/ClassLoader;)V",
-            &[(&dex_buffer).into(), (&class_loader).into()],
-        )
-        .unwrap();
-
-    let class_name = env.new_string("CameraHelper").unwrap();
-    let camera_helper_class: JClass = env
-        .call_method(
-            dex_class_loader,
-            "findClass",
-            "(Ljava/lang/String;)Ljava/lang/Class;",
-            &[(&class_name).into()],
-        )
-        .unwrap()
-        .l()
-        .unwrap()
-        .into();
-
-    env.register_native_methods(
-        &camera_helper_class,
-        &[NativeMethod {
-            name: "handleImage".into(),
-            sig: "(J[BI[BI[BIIII)V".into(),
-            fn_ptr: Java_CameraHelper_handleImage as *mut _,
-        }],
-    )
-    .unwrap();
-
-    let camera_helper = env
-        .new_object(
-            camera_helper_class,
-            "(Landroid/app/Activity;J)V",
-            &[(&activity).into(), JValue::Long(slint_main_window as jlong)],
-        )
-        .unwrap();
-
-    env.call_method(&camera_helper, "start", "()V", &[])
-        .unwrap();
-
-    env.new_global_ref(&camera_helper).unwrap()
+    if state.java_helpers.is_camera_running(&mut env) {
+        let _ = state.java_helpers.stop_camera(&mut env);
+    }
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_CameraHelper_handleImage<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
-    main_window: jlong,
+    app_state: jlong,
     y_plane: JByteArray<'local>,
     y_stride: jint,
     u_plane: JByteArray<'local>,
@@ -142,7 +65,7 @@ pub extern "system" fn Java_CameraHelper_handleImage<'local>(
     width: jint,
     height: jint,
 ) {
-    let slint_main_window = unsafe { (main_window as *const Weak<MainWindow>).as_ref().unwrap() };
+    let state = unsafe { (app_state as *mut Rc<AppState>).as_ref().unwrap() };
 
     let y_plane = env.convert_byte_array(y_plane).unwrap();
     let u_plane = env.convert_byte_array(u_plane).unwrap();
@@ -159,6 +82,30 @@ pub extern "system" fn Java_CameraHelper_handleImage<'local>(
         height: height as u32,
     };
 
+    let pixel_buffer = android_yuv_to_slint_rgb(yuv_image, rotation, width, height);
+    let otp_auth_url = parse_qr_code(&y_plane, width as usize, height as usize);
+    let url_with_sender = otp_auth_url.map(|a| (a, state.sender.clone()));
+
+    // https://github.com/slint-ui/slint/issues/1649
+    state
+        .main_window
+        .upgrade_in_event_loop(move |window| {
+            window.set_camera(slint::Image::from_rgb8(pixel_buffer));
+
+            if let Some((url, sender)) = url_with_sender {
+                sender.send(CodeMessage::Add(url)).unwrap();
+                window.invoke_navigate_to_page(Page::Start);
+            }
+        })
+        .unwrap();
+}
+
+fn android_yuv_to_slint_rgb(
+    yuv_image: YuvPlanarImage<'_, u8>,
+    rotation: i32,
+    width: i32,
+    height: i32,
+) -> SharedPixelBuffer<Rgb8Pixel> {
     let channels = 3;
     let mut rgb_bytes = vec![0; (width * height * channels) as usize];
 
@@ -190,18 +137,29 @@ pub extern "system" fn Java_CameraHelper_handleImage<'local>(
         rgb_bytes
     };
 
-    let pixel_buffer = SharedPixelBuffer::<Rgb8Pixel>::clone_from_slice(
+    SharedPixelBuffer::<Rgb8Pixel>::clone_from_slice(
         &rgb_bytes_rotated,
         dst_width as u32,
         dst_height as u32,
-    );
+    )
+}
 
-    // https://github.com/slint-ui/slint/issues/1649
-    slint_main_window
-        .upgrade_in_event_loop(move |window| {
-            window.set_camera(slint::Image::from_rgb8(pixel_buffer));
-        })
-        .unwrap();
+pub fn parse_qr_code(y_plane: &[u8], width: usize, height: usize) -> Option<String> {
+    // We ignore that `y_plane` isn't rotated correctly, the `rqrr` reader is able to read it in any 90deg orientation.
+    let mut qr_image =
+        PreparedImage::prepare_from_greyscale(width, height, |x, y| y_plane[x + y * width]);
+
+    let qr_grids = qr_image.detect_grids();
+    for qr_grid in qr_grids {
+        match qr_grid.decode() {
+            Ok((_, url)) if TOTP::from_url(&url).is_ok() => return Some(url),
+            // TODO: Handle errors.
+            Ok((_, url)) => eprintln!("Invalid QR code content: {}", url),
+            Err(err) => eprintln!("Unable to read possible QR code: {}", err),
+        }
+    }
+
+    None
 }
 
 pub fn rotation_mode(rotation: i32, width: i32, height: i32) -> (Option<RotationMode>, i32, i32) {

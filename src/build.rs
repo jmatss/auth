@@ -11,12 +11,16 @@ fn main() {
 
     let android_jar_path = android_build::android_jar(None).unwrap();
     let out_dir_path = PathBuf::from(&std::env::var("OUT_DIR").unwrap());
-    let java_file_path = Path::new("src").join("java").join("CameraHelper.java");
+    let java_src_path = Path::new("src").join("java");
+    let java_src_paths = [
+        java_src_path.join("CameraHelper.java"),
+        java_src_path.join("OtpAuthHelper.java"),
+    ];
 
     let compile_exit_status = android_build::JavaBuild::new()
         .class_path(&android_jar_path)
         .classes_out_dir(&out_dir_path)
-        .file(&java_file_path)
+        .files(&java_src_paths)
         .compile()
         .unwrap();
 
@@ -42,5 +46,7 @@ fn main() {
         panic!("Dexer failed");
     }
 
-    println!("cargo:rerun-if-changed={}", java_file_path.display());
+    for path in java_src_paths {
+        println!("cargo:rerun-if-changed={}", path.display());
+    }
 }
