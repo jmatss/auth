@@ -1,36 +1,46 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 fn main() {
+    let is_release_mode = std::env::var("PROFILE").is_ok_and(|a| a == "release");
+
     slint_build::compile_with_config(
         "ui/app.slint",
         slint_build::CompilerConfiguration::new().with_style("fluent".into()),
     )
     .unwrap();
 
-    let android_api_level = 28;
-    let ndk_path = std::env::var("ANDROID_NDK_ROOT").unwrap();
-    let target_triple = std::env::var("TARGET").unwrap();
-    let host_triple = std::env::var("HOST")
+    let android_jar_path = android_build::android_jar(None).unwrap();
+    let out_dir_path = PathBuf::from(&std::env::var("OUT_DIR").unwrap());
+    let java_file_path = Path::new("src").join("java").join("CameraHelper.java");
+
+    let compile_exit_status = android_build::JavaBuild::new()
+        .class_path(&android_jar_path)
+        .classes_out_dir(&out_dir_path)
+        .file(&java_file_path)
+        .compile()
+        .unwrap();
+
+    if !compile_exit_status.success() {
+        panic!("Java compile failed");
+    }
+
+    let dexer_exit_status = android_build::Dexer::new()
+        .android_jar(&android_jar_path)
+        .class_path(&out_dir_path)
+        .out_dir(&out_dir_path)
+        .release(is_release_mode)
+        .android_min_api(20)
+        .collect_classes(&out_dir_path)
         .unwrap()
-        .split('-')
-        .map(|x| x.into())
-        .collect::<Vec<String>>();
+        .command()
+        .unwrap()
+        .output()
+        .unwrap()
+        .status;
 
-    let host_arch = &host_triple[0];
-    let host_sys = &host_triple[2];
+    if !dexer_exit_status.success() {
+        panic!("Dexer failed");
+    }
 
-    let ndk_lib_path = Path::new(&ndk_path)
-        .join("toolchains")
-        .join("llvm")
-        .join("prebuilt")
-        .join(format!("{}-{}", host_sys, host_arch))
-        .join("sysroot")
-        .join("usr")
-        .join("lib")
-        .join(target_triple)
-        .join(android_api_level.to_string());
-
-    println!("cargo:rustc-link-search={}", ndk_lib_path.display());
-    println!("cargo:rustc-link-lib=camera2ndk");
-    println!("cargo:rustc-link-lib=mediandk");
+    println!("cargo:rerun-if-changed={}", java_file_path.display());
 }

@@ -7,15 +7,14 @@ use std::{
 use android_activity::MainEvent;
 use i_slint_backend_android_activity::AndroidPlatform;
 use i_slint_core::{items::FocusReason, window::WindowInner};
+use jni::objects::GlobalRef;
 use slint::android::AndroidApp;
 
 use crate::{
-    camera::CameraContext,
     codes::{add_code, load_codes},
     qr::{start_qr_scanner, stop_qr_scanner},
 };
 
-mod camera;
 mod codes;
 mod java;
 mod qr;
@@ -67,24 +66,29 @@ fn android_main(app: AndroidApp) {
     )))
     .unwrap();
 
+    let app_start = app.clone();
+    let app_stop = app.clone();
+
     let main_window = MainWindow::new().unwrap();
     let main_window_add = main_window.as_weak();
-    let main_window_qr = main_window.as_weak();
+    let main_window_start = main_window.as_weak();
 
-    let camera_context: Arc<RwLock<Option<CameraContext>>> = Arc::default();
-    let camera_context_start = Arc::clone(&camera_context);
-    let camera_context_stop = Arc::clone(&camera_context);
+    let java_camera_helper: Arc<RwLock<Option<GlobalRef>>> = Arc::default();
+    let java_camera_helper_start = Arc::clone(&java_camera_helper);
+    let java_camera_helper_stop = Arc::clone(&java_camera_helper);
 
     main_window.set_codes(load_codes());
     main_window.on_add_code(move |name, secret| add_code(&main_window_add, name, secret));
     main_window.on_start_qr_scanner(move || {
         start_qr_scanner(
-            main_window_qr.clone(),
-            app.clone(),
-            Arc::clone(&camera_context_start),
+            app_start.clone(),
+            Arc::clone(&java_camera_helper_start),
+            main_window_start.clone(),
         )
     });
-    main_window.on_stop_qr_scanner(move || stop_qr_scanner(Arc::clone(&camera_context_stop)));
+    main_window.on_stop_qr_scanner(move || {
+        stop_qr_scanner(app_stop.clone(), Arc::clone(&java_camera_helper_stop))
+    });
 
     *main_window_rc.borrow_mut() = Some(main_window);
     main_window_rc.borrow().as_ref().unwrap().run().unwrap();

@@ -456,13 +456,13 @@ name = "authenticator"
 version = "0.1.0"
 dependencies = [
  "android-activity 0.6.0",
+ "android-build",
  "i-slint-backend-android-activity",
  "i-slint-core",
- "image",
  "jni",
- "ndk-sys 0.6.0+11769913",
  "slint",
  "slint-build",
+ "yuv",
 ]
 
 [[package]]
@@ -1354,6 +1354,15 @@ dependencies = [
  "rayon-core",
  "smallvec",
  "zune-inflate",
+]
+
+[[package]]
+name = "fast_transpose"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "87fd7bef897517e02c834586f88572f4e2f485d5e9c0bbd1f3497ed6b5a7f6e2"
+dependencies = [
+ "bytemuck",
 ]
 
 [[package]]
@@ -5674,6 +5683,16 @@ dependencies = [
  "quote",
  "syn",
  "synstructure",
+]
+
+[[package]]
+name = "yuv"
+version = "0.8.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3bb136c6b36d2856e62f3121892ae59f32caf5b0a9ff184600f0f5f4d5ff075"
+dependencies = [
+ "fast_transpose",
+ "num-traits",
 ]
 
 [[package]]
