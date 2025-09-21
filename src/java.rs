@@ -3,7 +3,7 @@ use std::rc::Rc;
 use android_activity::AndroidApp;
 use jni::{
     AttachGuard, JavaVM, NativeMethod,
-    objects::{GlobalRef, JClass, JObject, JObjectArray, JValue},
+    objects::{GlobalRef, JClass, JObject, JObjectArray, JString, JValue},
     sys::jlong,
 };
 
@@ -18,6 +18,7 @@ pub static PERMISSION_CAMERA: &'static str = "android.permission.CAMERA";
 pub struct JavaHelpers {
     camera: GlobalRef,
     otp_auth: GlobalRef,
+    dialog: GlobalRef,
 }
 
 impl JavaHelpers {
@@ -95,6 +96,35 @@ impl JavaHelpers {
 
         urls
     }
+
+    pub fn swap_urls_on_disk(&self, env: &mut AttachGuard, first_url: &str, second_url: &str) {
+        let first_url_arg = env.new_string(first_url).unwrap();
+        let second_url_arg = env.new_string(second_url).unwrap();
+        env.call_method(
+            &self.otp_auth,
+            "swap",
+            "(Ljava/lang/String;Ljava/lang/String;)V",
+            &[(&first_url_arg).into(), (&second_url_arg).into()],
+        )
+        .unwrap();
+    }
+
+    pub fn show_error(&self, env: &mut AttachGuard, title: &str, message: &str) {
+        let title_arg = if title.is_empty() {
+            JString::from(JObject::null())
+        } else {
+            env.new_string(title).unwrap()
+        };
+        let message_arg = env.new_string(message).unwrap();
+
+        env.call_method(
+            &self.dialog,
+            "showError",
+            "(Ljava/lang/String;Ljava/lang/String;)V",
+            &[(&title_arg).into(), (&message_arg).into()],
+        )
+        .unwrap();
+    }
 }
 
 pub fn has_permission(app: &AndroidApp) -> bool {
@@ -143,8 +173,13 @@ pub fn load_helper_objects(app: &AndroidApp) -> JavaHelpers {
     let dex_class_loader = load_dex_class_loader(&mut env, &activity);
     let camera = load_camera_helper(&mut env, &dex_class_loader, &activity);
     let otp_auth = load_otp_auth_helper(&mut env, &dex_class_loader, &activity);
+    let dialog = load_dialog_helper(&mut env, &dex_class_loader, &activity);
 
-    JavaHelpers { camera, otp_auth }
+    JavaHelpers {
+        camera,
+        otp_auth,
+        dialog,
+    }
 }
 
 fn load_dex_class_loader<'local>(
@@ -238,4 +273,33 @@ fn load_otp_auth_helper(
         .unwrap();
 
     env.new_global_ref(&otp_auth_helper).unwrap()
+}
+
+fn load_dialog_helper(
+    env: &mut AttachGuard,
+    dex_class_loader: &JObject,
+    activity: &JObject,
+) -> GlobalRef {
+    let class_name = env.new_string("DialogHelper").unwrap();
+    let otp_auth_helper_class: JClass = env
+        .call_method(
+            dex_class_loader,
+            "findClass",
+            "(Ljava/lang/String;)Ljava/lang/Class;",
+            &[(&class_name).into()],
+        )
+        .unwrap()
+        .l()
+        .unwrap()
+        .into();
+
+    let dialog_helper = env
+        .new_object(
+            otp_auth_helper_class,
+            "(Landroid/app/Activity;)V",
+            &[(&activity).into()],
+        )
+        .unwrap();
+
+    env.new_global_ref(&dialog_helper).unwrap()
 }

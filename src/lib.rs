@@ -26,6 +26,7 @@ pub struct AppState {
     codes: Rc<VecModel<Code>>,
     java_helpers: JavaHelpers,
     /// The `codes_handler` has the corresponding Receiver.
+    /// Any modifications of codes in the application should go through this channel.
     sender: UnboundedSender<CodeMessage>,
 }
 
@@ -91,11 +92,40 @@ fn android_main(app: AndroidApp) {
     // drop this leaked Box at the end of this function.
     let state_raw = Box::into_raw(Box::new(Rc::clone(&state)));
 
+    // TODO: Spawn separate thread instead of just async. Do not include the `ModelRc` in state.
+    //       Must get it from the `main_window` in a `upgrade_in_event_loop` instead.
     let state_clone = Rc::clone(&state);
     let _ =
         slint::spawn_local(Compat::new(code_handler(Rc::clone(&state_clone), receiver))).unwrap();
 
     main_window.set_codes(ModelRc::from(Rc::clone(&codes)));
+
+    let state_clone = Rc::clone(&state);
+    main_window.on_edit_code(move |code, new_name, new_issuer| {
+        state_clone
+            .sender
+            .send(CodeMessage::Edit(
+                code.unique_idx,
+                new_name.into(),
+                new_issuer.into(),
+            ))
+            .unwrap();
+    });
+    let state_clone = Rc::clone(&state);
+    main_window.on_remove_code(move |code| {
+        state_clone
+            .sender
+            .send(CodeMessage::Remove(code.unique_idx))
+            .unwrap();
+    });
+    let state_clone = Rc::clone(&state);
+    main_window.on_move_code(move |code, direction| {
+        state_clone
+            .sender
+            .send(CodeMessage::Move(code.unique_idx, direction))
+            .unwrap();
+    });
+
     let state_clone = Rc::clone(&state);
     main_window.on_start_qr_scanner(move || start_qr_scanner(Rc::clone(&state_clone), state_raw));
     let state_clone = Rc::clone(&state);

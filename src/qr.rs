@@ -152,9 +152,7 @@ pub fn parse_qr_code(y_plane: &[u8], width: usize, height: usize) -> Option<Stri
     let qr_grids = qr_image.detect_grids();
     for qr_grid in qr_grids {
         match qr_grid.decode() {
-            Ok((_, url)) if TOTP::from_url(&url).is_ok() => return Some(url),
-            // TODO: Handle errors.
-            Ok((_, url)) => eprintln!("Invalid QR code content: {}", url),
+            Ok((_, qr_value)) => return Some(qr_value),
             Err(err) => eprintln!("Unable to read possible QR code: {}", err),
         }
     }

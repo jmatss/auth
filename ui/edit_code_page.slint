@@ -1,49 +1,123 @@
 
 import { ListView, Palette, ScrollView, LineEdit, Button, StandardButton } from "std-widgets.slint";
-import { Code } from "codes_page.slint";
+import { Code, MoveDirection } from "codes_page.slint";
 
 export component EditCodePage inherits ScrollView {
   in property <Code> code;
-  property <string> button_text: "Nothing";
-  callback edit_code_name(code: Code, new_name: string);
+  callback edit_code(code: Code, new_name: string, new_issuer: string);
   callback remove_code(code: Code);
   callback navigate_to_start_page();
+
+  public function remove_code_prompt() {
+      popup.show();
+  }
 
   mouse-drag-pan-enabled: true;
   horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
 
   popup := PopupWindow {
-    width: parent.width - 2rem;
-    
-    Dialog {
-      Text {
-        text: "Test Popup";
-      }
-      StandardButton {
-        kind: apply;
-        clicked => {
-          button_text = "Apply Clicked";
-        }
-      }
-      StandardButton {
-        kind: cancel;
-        clicked => {
-          button_text = "Cancel Clicked";
+    width: root.width;
+    height: root.height;
+
+    Rectangle {
+      background: black;
+      opacity: 0.6;
+      width: root.width;
+      height: root.height;
+    }
+
+    VerticalLayout {
+      alignment: center;
+      padding-left: 2rem;
+      padding-right: 2rem;
+
+      Rectangle {
+        background: Palette.background;
+        border-radius: 1rem;
+
+        VerticalLayout {
+          padding: 1rem;
+          spacing: 1rem;
+
+          Text {
+            text: "Are you sure that you want to remove the TOTP? This operation can not be undone.";
+            wrap: word-wrap;
+            font-size: 1.5rem;
+          }
+
+          HorizontalLayout {
+            spacing: 1rem;
+            alignment: start;
+
+            Text {
+              text: "Continue";
+              font-size: 2rem;
+              color: Palette.selection-background;
+
+              TouchArea {
+                clicked => {
+                  root.remove_code(code);
+                  root.navigate_to_start_page();
+                }
+              }
+            }
+
+            Text {
+              text: "Cancel";
+              font-size: 2rem;
+              color: Palette.selection-background;
+            }
+          }
         }
       }
     }
   }
 
   VerticalLayout {
-    t := LineEdit {
-      text: code.name;
+    spacing: 1rem;
+    padding: 1rem;
+
+    VerticalLayout {
+      vertical-stretch: 0;
+
+      name_label := Text {
+        text: "Name";
+      }
+
+      name_edit := LineEdit {
+        text: code.name;
+        font-size: 2rem;
+        height: 5rem;
+      }
     }
 
-    StandardButton {
-      kind: apply;
-      clicked => {
-        root.edit_code_name(code, t.text);
-        root.navigate_to_start_page();
+    VerticalLayout {
+      vertical-stretch: 0;
+
+      issuer_label := Text {
+        text: "Issuer";
+      }
+
+      issuer_edit := LineEdit {
+        text: code.issuer;
+        font-size: 2rem;
+        height: 5rem;
+      }
+    }
+
+    VerticalLayout {
+      vertical-stretch: 1;
+      alignment: end;
+
+      Button {
+        text: "Apply";
+        height: 5rem;
+        width: 100%;
+
+        clicked => {
+          root.edit_code(code, name_edit.text, issuer_edit.text);
+          root.navigate_to_start_page();
+        }
       }
     }
   }

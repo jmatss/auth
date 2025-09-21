@@ -39,6 +39,15 @@ public class OtpAuthHelper {
         write(urls);
     }
 
+    public void swap(String firstUrl, String secondUrl) throws IOException {
+        List<String> urls = read();
+        int firstIndex = urls.indexOf(firstUrl);
+        int secondIndex = urls.indexOf(secondUrl);
+        urls.set(firstIndex, secondUrl);
+        urls.set(secondIndex, firstUrl);
+        write(urls);
+    }
+
     public String[] get() throws IOException {
         return read().toArray(new String[0]);
     }

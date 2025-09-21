@@ -4,26 +4,10 @@ import { Code } from "codes_page.slint";
 
 export component AddCodePage inherits Rectangle {
   in property <image> camera <=> camera.source;
-  callback add_code(url: string);
-  callback navigate_to_start_page();
 
   camera := Image {
     width: root.width;
     height: root.height;
     image-fit: cover;
-  }
-
-  VerticalLayout {
-    Rectangle {
-      vertical-stretch: 1;
-    }
-
-    Button {
-      text: "temp123";
-      clicked => {
-        root.add_code("otpauth://totp/Example1:test@gmail.com?secret=JBSWY3DPEHPK3PXP&issuer=Example2");
-        root.navigate_to_start_page();
-      }
-    }
   }
 }

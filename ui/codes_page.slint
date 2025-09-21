@@ -1,11 +1,20 @@
 
 import { ListView, Palette } from "std-widgets.slint";
 
+/// The direction in which a code should be moved in the list of codes.
+export enum MoveDirection {
+  Up,
+  Down,
+}
+
 export struct Code {
   unique_idx: int,
   name: string,
   issuer: string,
+  /// Valid code for the current time step.
   code: string,
+  /// Code for the next valid time step.
+  next_code: string,
   /// The exact time a Code is valid (usually 30 sec).
   step: duration,
   /// The "unix time" when this code struct was created.
@@ -25,6 +34,7 @@ export component CodesPage inherits ListView {
     property <Code> local_item: item;
     changed local_item => {
       // Hack to reset timer when new item is set. Unable to do with normal binding.
+      nameCode.show_next_code = false;
       timer.running_duration = 0;
       timer.running = true;
       timer.start_unix_time = item.start_unix_time;
@@ -55,7 +65,7 @@ export component CodesPage inherits ListView {
 
       VerticalLayout {
         HorizontalLayout {
-          padding-left: 2rem;
+          padding-left: 1rem;
           padding-right: 1rem;
 
           Rectangle {
@@ -68,12 +78,12 @@ export component CodesPage inherits ListView {
               nameText := Text {
                 x: 0;
                 font-size: 1.5rem;
-                text: item.issuer.is-empty ? item.name : item.issuer + " (" + item.name + ")";
+                text: item.issuer.is-empty ? item.name : (item.name + " (" + item.issuer + ")");
                 wrap: char-wrap;
               }
             }
 
-            editCodeTouchArea := TouchArea {
+            TouchArea {
               clicked => root.navigate_to_edit_code_page(item);
             }
           }
@@ -86,10 +96,18 @@ export component CodesPage inherits ListView {
               height: nameCode.height;
               background: Palette.alternate-background;
 
+              TouchArea {
+                clicked => {
+                  nameCode.show_next_code = !nameCode.show_next_code;
+                };
+              }
+
               nameCode := Text {
-                text: item.code;
+                property <bool> show_next_code: false;
+
+                text: self.show_next_code ? item.next-code : item.code;
+                color: self.show_next_code ? #780606 : Palette.selection-background;
                 font-size: 4rem;
-                color: Palette.selection-background;
               }
             }
           }

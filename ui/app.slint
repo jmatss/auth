@@ -1,5 +1,5 @@
 import { Page, TopMenu, TopMenuItem, TopMenuItems } from "top_menu.slint";
-import { Code, CodesPage } from "codes_page.slint";
+import { Code, CodesPage, MoveDirection } from "codes_page.slint";
 import { EditCodePage } from "edit_code_page.slint";
 import { AddCodePage } from "add_code_page.slint";
 
@@ -9,7 +9,9 @@ export component MainWindow inherits Window {
   // Will be updated with images from the phone camera (when the QR scanner is running).
   in property <image> camera;
 
-  callback add_code(url: string);
+  callback edit_code(code: Code, new_name: string, new_issuer: string);
+  callback remove_code(code: Code);
+  callback move_code(code: Code, direction: MoveDirection);
   callback start_qr_scanner() -> bool;
   callback stop_qr_scanner();
 
@@ -79,8 +81,6 @@ export component MainWindow inherits Window {
 
       addCodePage := AddCodePage {
         camera: root.camera;
-        add_code(url) => root.add_code(url);
-        navigate_to_start_page => root.navigate_to_page(Page.Start);
       }
     }
 
@@ -95,14 +95,30 @@ export component MainWindow inherits Window {
 
         TopMenuItems {
           TopMenuItem {
+            icon: @image-url("images/chevron_up.svg");
+            clicked => {
+              root.move_code(editCodePage.code, MoveDirection.Up);
+              root.navigate_to_page(Page.Start);
+            }
+          }
+          TopMenuItem {
+            icon: @image-url("images/chevron_down.svg");
+            clicked => {
+              root.move_code(editCodePage.code, MoveDirection.Down);
+              root.navigate_to_page(Page.Start);
+            }
+          }
+          TopMenuItem {
             icon: @image-url("images/minus.svg");
-            clicked => editCodePage.remove_code(code_being_edited);
+            clicked => editCodePage.remove_code_prompt();
           }
         }
       }
 
       editCodePage := EditCodePage {
         code: code_being_edited;
+        edit_code(code, new_name, new_issuer) => root.edit_code(code, new_name, new_issuer);
+        remove_code(code) => root.remove_code(code);
         navigate_to_start_page => root.navigate_to_page(Page.Start);
       }
     }

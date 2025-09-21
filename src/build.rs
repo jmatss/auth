@@ -15,6 +15,7 @@ fn main() {
     let java_src_paths = [
         java_src_path.join("CameraHelper.java"),
         java_src_path.join("OtpAuthHelper.java"),
+        java_src_path.join("DialogHelper.java"),
     ];
 
     let compile_exit_status = android_build::JavaBuild::new()

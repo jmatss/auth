@@ -1,27 +1,40 @@
 use std::{
+    os::android::raw::stat,
     rc::Rc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use android_activity::AndroidApp;
+use i_slint_core::animations::Instant;
 use jni::JavaVM;
 use slint::Model;
 use tokio::{sync::mpsc::UnboundedReceiver, time::timeout};
 use totp_rs::TOTP;
 
-use crate::{AppState, Code, java::JavaHelpers};
+use crate::{AppState, Code, MoveDirection, java::JavaHelpers, qr::start_qr_scanner};
 
 pub enum CodeMessage {
     /// The `String` is the URL of the added code.
     Add(String),
-    /// The `String` is the URL of the removed code.
-    Remove(String),
-    /// The `String` is the old URL. The second `String` is the new URL.
-    Edit(String, String),
+    /// The `i32` is the `unique_idx` of the code to remove.
+    Remove(i32),
+    /// The `i32` is the `unique_idx` of the code. The first `String` is the new name
+    /// and the last `String` is the new issuer.
+    Edit(i32, String, String),
+    /// The `i32` is the `unique_idx` of the code. The `MoveDirection` is which direction
+    /// the code should be moved in the "list of codes".
+    Move(i32, MoveDirection),
 }
 
 pub async fn code_handler(state: Rc<AppState>, mut reciver: UnboundedReceiver<CodeMessage>) {
     let mut unique_idx = 0;
+
+    // Used to prevent adding multiple of the same QR code when it is added. Since the adding
+    // operation is async, the Sender might send multiple `CodeMessage::Add` to this `code_handler`
+    // before the code is actually added. So need to prevent accidentally adding the same code
+    // multiple times.
+    let mut last_add_time = Instant::now();
+    let debounce_time = Duration::from_secs(1);
 
     let mut totps = load_totps(state.app.clone(), &state.java_helpers);
 
@@ -38,38 +51,30 @@ pub async fn code_handler(state: Rc<AppState>, mut reciver: UnboundedReceiver<Co
 
         for (row, (code, totp)) in state.codes.iter().zip(&totps).enumerate() {
             if unix_time_ms > code.valid_until_unix_time {
-                let new_code = totp_to_code(code.unique_idx, totp);
-                state.codes.set_row_data(row, new_code);
+                state
+                    .codes
+                    .set_row_data(row, totp_to_code(code.unique_idx, totp));
             }
         }
 
         match timeout(Duration::from_millis(500), reciver.recv()).await {
             Ok(Some(CodeMessage::Add(url))) => {
-                let vm = unsafe { JavaVM::from_raw(state.app.vm_as_ptr() as *mut _).unwrap() };
-                let mut env = vm.attach_current_thread().unwrap();
-
-                state.java_helpers.write_url_to_disk(&mut env, &url);
-
-                let totp = TOTP::from_url(&url).unwrap();
-                let code = totp_to_code(unique_idx, &totp);
-                totps.push(totp);
-                state.codes.push(code);
-
-                unique_idx += 1;
+                if last_add_time + debounce_time < Instant::now() {
+                    let was_added = handle_add(&state, &mut totps, &url, unique_idx);
+                    if was_added {
+                        unique_idx += 1;
+                        last_add_time = Instant::now();
+                    }
+                }
             }
-            Ok(Some(CodeMessage::Remove(url))) => {
-                let vm = unsafe { JavaVM::from_raw(state.app.vm_as_ptr() as *mut _).unwrap() };
-                let mut env = vm.attach_current_thread().unwrap();
-
-                state.java_helpers.remove_url_from_disk(&mut env, &url);
+            Ok(Some(CodeMessage::Remove(unique_idx))) => {
+                handle_remove(&state, &mut totps, unique_idx);
             }
-            Ok(Some(CodeMessage::Edit(old_url, new_url))) => {
-                let vm = unsafe { JavaVM::from_raw(state.app.vm_as_ptr() as *mut _).unwrap() };
-                let mut env = vm.attach_current_thread().unwrap();
-
-                state
-                    .java_helpers
-                    .edit_url_on_disk(&mut env, &old_url, &new_url);
+            Ok(Some(CodeMessage::Edit(unique_idx, new_name, new_issuer))) => {
+                handle_edit(&state, &mut totps, unique_idx, new_name, new_issuer);
+            }
+            Ok(Some(CodeMessage::Move(unique_idx, direction))) => {
+                handle_move(&state, &mut totps, unique_idx, direction);
             }
             // Timeout. This is expected, continue loop as normal.
             Err(_) => (),
@@ -77,6 +82,159 @@ pub async fn code_handler(state: Rc<AppState>, mut reciver: UnboundedReceiver<Co
             Ok(None) => break,
         }
     }
+}
+
+fn handle_add(state: &Rc<AppState>, totps: &mut Vec<TOTP>, url: &str, unique_idx: i32) -> bool {
+    let vm = unsafe { JavaVM::from_raw(state.app.vm_as_ptr() as *mut _).unwrap() };
+    let mut env = vm.attach_current_thread().unwrap();
+
+    match TOTP::from_url(&url) {
+        Ok(totp) => {
+            let code = totp_to_code(unique_idx, &totp);
+            let normalized_url = totp.get_url();
+
+            let already_exists = totps.iter().any(|t| t.get_url() == normalized_url);
+            if already_exists {
+                state.java_helpers.show_error(
+                    &mut env,
+                    "Error",
+                    "This TOTP already exists in the application",
+                );
+
+                false
+            } else {
+                state
+                    .java_helpers
+                    .write_url_to_disk(&mut env, &normalized_url);
+
+                totps.push(totp);
+                state.codes.push(code);
+
+                true
+            }
+        }
+        Err(err) => {
+            state
+                .java_helpers
+                .show_error(&mut env, "Error", &err.to_string());
+
+            false
+        }
+    }
+}
+
+fn handle_remove(state: &Rc<AppState>, totps: &mut Vec<TOTP>, unique_idx: i32) {
+    let vm = unsafe { JavaVM::from_raw(state.app.vm_as_ptr() as *mut _).unwrap() };
+    let mut env = vm.attach_current_thread().unwrap();
+
+    let row = state
+        .codes
+        .iter()
+        .enumerate()
+        .find(|(_, c)| c.unique_idx == unique_idx)
+        .unwrap()
+        .0;
+
+    let totp = totps.remove(row);
+    let normalized_url = totp.get_url();
+    state.codes.remove(row);
+
+    state
+        .java_helpers
+        .remove_url_from_disk(&mut env, &normalized_url);
+}
+
+fn handle_edit(
+    state: &Rc<AppState>,
+    totps: &mut Vec<TOTP>,
+    unique_idx: i32,
+    new_name: String,
+    new_issuer: String,
+) {
+    let vm = unsafe { JavaVM::from_raw(state.app.vm_as_ptr() as *mut _).unwrap() };
+    let mut env = vm.attach_current_thread().unwrap();
+
+    let row = state
+        .codes
+        .iter()
+        .enumerate()
+        .find(|(_, c)| c.unique_idx == unique_idx)
+        .unwrap()
+        .0;
+
+    let totp = &mut totps[row];
+    let old_normalized_url = totp.get_url();
+
+    totp.account_name = new_name;
+    totp.issuer = if new_issuer.is_empty() {
+        None
+    } else {
+        Some(new_issuer)
+    };
+
+    let new_normalized_url = totp.get_url();
+    state
+        .java_helpers
+        .edit_url_on_disk(&mut env, &old_normalized_url, &new_normalized_url);
+
+    state
+        .codes
+        .set_row_data(row, totp_to_code(unique_idx, totp));
+}
+
+fn handle_move(
+    state: &Rc<AppState>,
+    totps: &mut Vec<TOTP>,
+    unique_idx: i32,
+    direction: MoveDirection,
+) -> bool {
+    let vm = unsafe { JavaVM::from_raw(state.app.vm_as_ptr() as *mut _).unwrap() };
+    let mut env = vm.attach_current_thread().unwrap();
+
+    let row = state
+        .codes
+        .iter()
+        .enumerate()
+        .find(|(_, c)| c.unique_idx == unique_idx)
+        .unwrap()
+        .0;
+
+    let row_count = state.codes.row_count();
+    let other_row = match direction {
+        MoveDirection::Up if row == 0 => {
+            state.java_helpers.show_error(
+                &mut env,
+                "Info",
+                "Unable to move upwards since it is already at the top",
+            );
+
+            return false;
+        }
+        MoveDirection::Down if row + 1 == row_count => {
+            state.java_helpers.show_error(
+                &mut env,
+                "Info",
+                "Unable to move downwards since it is already at the bottom",
+            );
+
+            return false;
+        }
+
+        MoveDirection::Up => row - 1,
+        MoveDirection::Down => row + 1,
+    };
+
+    let first_url = totps[row].get_url();
+    let second_url = totps[other_row].get_url();
+
+    totps.swap(row, other_row);
+    state.codes.swap(row, other_row);
+
+    state
+        .java_helpers
+        .swap_urls_on_disk(&mut env, &first_url, &second_url);
+
+    true
 }
 
 fn load_totps(app: AndroidApp, java_helpers: &JavaHelpers) -> Vec<TOTP> {
@@ -97,14 +255,17 @@ fn totp_to_code(unique_idx: i32, totp: &TOTP) -> Code {
     let valid_until_unix_time =
         (unix_time + Duration::from_secs(valid_duration_secs)).as_millis() as i64;
 
-    let code = totp.generate_current().unwrap();
-    let code = format!("{} {}", &code[0..code.len() / 2], &code[code.len() / 2..]);
+    let c = totp.generate_current().unwrap();
+    let code = format!("{} {}", &c[0..c.len() / 2], &c[c.len() / 2..]);
+    let nc = totp.generate(totp.next_step_current().unwrap());
+    let next_code = format!("{} {}", &nc[0..nc.len() / 2], &nc[nc.len() / 2..]);
 
     Code {
         unique_idx,
         name: totp.account_name.clone().into(),
         issuer: totp.issuer.clone().unwrap_or_default().into(),
         code: code.into(),
+        next_code: next_code.into(),
         step: Duration::from_secs(totp.step).as_millis() as i64,
         start_unix_time: unix_time.as_millis() as i64,
         valid_until_unix_time,
