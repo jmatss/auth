@@ -1,5 +1,4 @@
 use std::{
-    os::android::raw::stat,
     rc::Rc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -9,9 +8,9 @@ use i_slint_core::animations::Instant;
 use jni::JavaVM;
 use slint::Model;
 use tokio::{sync::mpsc::UnboundedReceiver, time::timeout};
-use totp_rs::TOTP;
+use totp_rs::{Rfc6238Error, TOTP, TotpUrlError};
 
-use crate::{AppState, Code, MoveDirection, java::JavaHelpers, qr::start_qr_scanner};
+use crate::{AppState, Code, MoveDirection, java::JavaHelpers};
 
 pub enum CodeMessage {
     /// The `String` is the URL of the added code.
@@ -88,7 +87,7 @@ fn handle_add(state: &Rc<AppState>, totps: &mut Vec<TOTP>, url: &str, unique_idx
     let vm = unsafe { JavaVM::from_raw(state.app.vm_as_ptr() as *mut _).unwrap() };
     let mut env = vm.attach_current_thread().unwrap();
 
-    match TOTP::from_url(&url) {
+    match url_to_totp(&url) {
         Ok(totp) => {
             let code = totp_to_code(unique_idx, &totp);
             let normalized_url = totp.get_url();
@@ -244,7 +243,7 @@ fn load_totps(app: AndroidApp, java_helpers: &JavaHelpers) -> Vec<TOTP> {
     java_helpers
         .get_urls_from_disk(&mut env)
         .iter()
-        .map(|url| TOTP::from_url(url).unwrap())
+        .map(|url| url_to_totp(url).unwrap())
         .collect::<Vec<_>>()
 }
 
@@ -269,5 +268,48 @@ fn totp_to_code(unique_idx: i32, totp: &TOTP) -> Code {
         step: Duration::from_secs(totp.step).as_millis() as i64,
         start_unix_time: unix_time.as_millis() as i64,
         valid_until_unix_time,
+    }
+}
+
+/// `TOTP::from_url(..)` enforces that the secret is at least 128 bits.
+/// But some implementations have secrets less that 128 bits (80 bits is common).
+///
+/// This function does the exact same thing as `TOTP::from_url(..)`, but changes the
+/// secrets minimum length from 128 bits to 80 bits.
+/// Logic copied from `TOTP::new(..)` code.
+/// [https://github.com/constantoine/totp-rs/blob/v5.7.0/src/lib.rs#L503]
+/// [https://github.com/constantoine/totp-rs/issues/46]
+fn url_to_totp(url: &str) -> Result<TOTP, TotpUrlError> {
+    let totp = TOTP::from_url_unchecked(url).unwrap();
+    assert_digits(&totp.digits)?;
+    assert_secret_length(&totp.secret)?;
+    if totp.issuer.is_some() && totp.issuer.as_ref().unwrap().contains(':') {
+        Err(TotpUrlError::Issuer(
+            totp.issuer.as_ref().unwrap().to_string(),
+        ))
+    } else if totp.account_name.contains(':') {
+        Err(TotpUrlError::AccountName(totp.account_name))
+    } else {
+        Ok(totp)
+    }
+}
+
+/// Copy paste of private function in `totp_rs::rfc`.
+/// [https://github.com/constantoine/totp-rs/blob/v5.7.0/src/rfc.rs#L38]
+pub fn assert_digits(digits: &usize) -> Result<(), Rfc6238Error> {
+    if !(&6..=&8).contains(&digits) {
+        Err(Rfc6238Error::InvalidDigits(*digits))
+    } else {
+        Ok(())
+    }
+}
+
+/// Copy paste of private function in `totp_rs::rfc`.
+/// [https://github.com/constantoine/totp-rs/blob/v5.7.0/src/rfc.rs#L48]
+pub fn assert_secret_length(secret: &[u8]) -> Result<(), Rfc6238Error> {
+    if secret.as_ref().len() < 10 {
+        Err(Rfc6238Error::SecretTooSmall(secret.as_ref().len() * 8))
+    } else {
+        Ok(())
     }
 }

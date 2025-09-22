@@ -7,7 +7,6 @@ use jni::{
 };
 use rqrr::PreparedImage;
 use slint::{Rgb8Pixel, SharedPixelBuffer};
-use totp_rs::TOTP;
 use yuv::{RotationMode, YuvPlanarImage, YuvRange, YuvStandardMatrix, rotate_rgb, yuv420_to_rgb};
 
 use crate::{
