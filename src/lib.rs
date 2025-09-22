@@ -9,7 +9,7 @@ use slint::{ModelRc, VecModel, Weak, android::AndroidApp};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 use crate::{
-    codes::{CodeMessage, code_handler},
+    codes::{CodeMessage, code_handler, unix_time},
     java::{JavaHelpers, load_helper_objects},
     qr::{start_qr_scanner, stop_qr_scanner},
 };
@@ -130,6 +130,8 @@ fn android_main(app: AndroidApp) {
     main_window.on_start_qr_scanner(move || start_qr_scanner(Rc::clone(&state_clone), state_raw));
     let state_clone = Rc::clone(&state);
     main_window.on_stop_qr_scanner(move || stop_qr_scanner(Rc::clone(&state_clone)));
+
+    main_window.on_unix_time(|| unix_time());
 
     *main_window_rc.borrow_mut() = Some(main_window);
     main_window_rc.borrow().as_ref().unwrap().run().unwrap();

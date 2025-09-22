@@ -17,53 +17,39 @@ export struct Code {
   next_code: string,
   /// The exact time a Code is valid (usually 30 sec).
   step: duration,
-  /// The "unix time" when this code struct was created.
+  /// The "unix time" when this code became valid.
   start_unix_time: duration,
-  /// The "unix time" when this code gets invalid. Used for time keeping in rust.
-  valid_until_unix_time: duration,
 }
 
-export component CodesPage inherits ListView {
+export component CodesPage inherits Rectangle {
   in property <[Code]> codes;
   callback navigate_to_edit_code_page(Code);
+  pure callback unix_time() -> duration;
 
-  mouse-drag-pan-enabled: true;
-  horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
+  unix_timer := Timer {
+    property <duration> unix_time: root.unix_time();
 
-  for item in codes : VerticalLayout {
-    property <Code> local_item: item;
-    changed local_item => {
-      // Hack to reset timer when new item is set. Unable to do with normal binding.
-      nameCode.show_next_code = false;
-      timer.running_duration = 0;
-      timer.running = true;
-      timer.start_unix_time = item.start_unix_time;
-      timer.valid_until_unix_time = item.valid-until-unix-time;
-    }
+    interval: 50ms;
 
-    padding-top: 0.5rem;
+    triggered => { self.unix_time += unix_timer.interval; }
+  }
 
-    timer := Timer {
-      property <duration> running_duration;
-      property <duration> start_unix_time: item.start_unix_time;
-      property <duration> valid_until_unix_time: item.valid_until_unix_time;
+  ListView {
+    mouse-drag-pan-enabled: true;
+    horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
 
-      interval: 100ms;
-
-      triggered => {
-        self.running_duration += timer.interval;
-        if (self.running_duration + self.start_unix_time >= self.valid_until_unix_time) {
-          // The code is now invalid. We will just wait and assume that the backend will
-          // replace this `item` with a new one.
-          self.running = false;
-        }
+    for item in codes : VerticalLayout {
+      property <Code> local_item: item;
+      changed local_item => {
+        // Hack to reset boolean on new item. Unable to do with normal binding.
+        nameCode.show_next_code = false;
       }
-    }
 
-    Rectangle {
-      background: Palette.alternate-background;
+      padding-top: 0.5rem;
 
-      VerticalLayout {
+      Rectangle {
+        background: Palette.alternate-background;
+
         HorizontalLayout {
           padding-left: 1rem;
           padding-right: 1rem;
@@ -113,16 +99,16 @@ export component CodesPage inherits ListView {
           }
         }
       }
-    }
 
-    countDown := Rectangle { 
-      height: 0.5rem;
-      background: Palette.selection-background;
+      countDown := Rectangle { 
+        height: 0.5rem;
+        background: Palette.selection-background;
 
-      Rectangle {
-        background: #780606;
-        width: parent.width * ((item.step - (timer.valid_until_unix_time - timer.start_unix_time) + timer.running_duration) / item.step);
-        x: 0;
+        Rectangle {
+          background: #780606;
+          width: Math.clamp(parent.width * (unix_timer.unix_time - item.start_unix_time) / item.step, 0, parent.width);
+          x: 0;
+        }
       }
     }
   }

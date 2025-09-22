@@ -43,13 +43,10 @@ pub async fn code_handler(state: Rc<AppState>, mut reciver: UnboundedReceiver<Co
     }
 
     loop {
-        let unix_time_ms = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64;
+        let unix_time_ms = unix_time();
 
         for (row, (code, totp)) in state.codes.iter().zip(&totps).enumerate() {
-            if unix_time_ms > code.valid_until_unix_time {
+            if unix_time_ms > code.start_unix_time + code.step {
                 state
                     .codes
                     .set_row_data(row, totp_to_code(code.unique_idx, totp));
@@ -81,6 +78,13 @@ pub async fn code_handler(state: Rc<AppState>, mut reciver: UnboundedReceiver<Co
             Ok(None) => break,
         }
     }
+}
+
+pub fn unix_time() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64
 }
 
 fn handle_add(state: &Rc<AppState>, totps: &mut Vec<TOTP>, url: &str, unique_idx: i32) -> bool {
@@ -248,11 +252,11 @@ fn load_totps(app: AndroidApp, java_helpers: &JavaHelpers) -> Vec<TOTP> {
 }
 
 fn totp_to_code(unique_idx: i32, totp: &TOTP) -> Code {
-    let unix_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+    let unix_time_ms = unix_time();
+    let step_ms = Duration::from_secs(totp.step).as_millis() as i64;
 
-    let valid_duration_secs = totp.step - unix_time.as_secs() % totp.step;
-    let valid_until_unix_time =
-        (unix_time + Duration::from_secs(valid_duration_secs)).as_millis() as i64;
+    // The unix time at which this code started being valid.
+    let start_unix_time = unix_time_ms - unix_time_ms % step_ms;
 
     let c = totp.generate_current().unwrap();
     let code = format!("{} {}", &c[0..c.len() / 2], &c[c.len() / 2..]);
@@ -265,9 +269,8 @@ fn totp_to_code(unique_idx: i32, totp: &TOTP) -> Code {
         issuer: totp.issuer.clone().unwrap_or_default().into(),
         code: code.into(),
         next_code: next_code.into(),
-        step: Duration::from_secs(totp.step).as_millis() as i64,
-        start_unix_time: unix_time.as_millis() as i64,
-        valid_until_unix_time,
+        step: step_ms,
+        start_unix_time,
     }
 }
 
