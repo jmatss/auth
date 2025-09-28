@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-use android_activity::MainEvent;
+use android_activity::{MainEvent, PollEvent};
 use async_compat::Compat;
 use i_slint_backend_android_activity::AndroidPlatform;
 use i_slint_core::{items::FocusReason, window::WindowInner};
@@ -50,14 +50,12 @@ fn android_main(app: AndroidApp) {
     //       The "platform" needs to be created/setup before the `MainWindow` is created, so need
     //       to wrap RefCell.
     let main_window_rc: Rc<RefCell<Option<MainWindow>>> = Rc::new(RefCell::new(None));
-    let main_window_clone = main_window_rc.clone();
+    let main_window_clone = Rc::clone(&main_window_rc);
 
     slint::platform::set_platform(Box::new(AndroidPlatform::new_with_event_listener(
         app.clone(),
         move |e| match e {
-            i_slint_backend_android_activity::android_activity::PollEvent::Main(
-                MainEvent::InputAvailable,
-            ) => {
+            PollEvent::Main(MainEvent::InputAvailable) => {
                 if let Some(window) = main_window_clone.as_ref().borrow().as_ref() {
                     let inner_window = WindowInner::from_pub(window.window());
                     if inner_window.focus_item.borrow().upgrade().is_none() {
@@ -67,6 +65,28 @@ fn android_main(app: AndroidApp) {
                             true,
                             FocusReason::WindowActivation,
                         );
+                    }
+                }
+            }
+            PollEvent::Main(MainEvent::Start) => {
+                if let Some(window) = main_window_clone.as_ref().borrow().as_ref() {
+                    match window.get_selected_page() {
+                        Page::Start => {} // TODO: Currently nothing to do, but should start code handler.
+                        Page::AddCode => {
+                            _ = window.invoke_start_qr_scanner();
+                        }
+                        Page::EditCode => {} // Nothing to do.
+                    }
+                }
+            }
+            PollEvent::Main(MainEvent::Stop) => {
+                if let Some(window) = main_window_clone.as_ref().borrow().as_ref() {
+                    match window.get_selected_page() {
+                        Page::Start => {} // TODO: Currently nothing to do, but should stop code handler.
+                        Page::AddCode => {
+                            _ = window.invoke_stop_qr_scanner();
+                        }
+                        Page::EditCode => {} // Nothing to do.
                     }
                 }
             }

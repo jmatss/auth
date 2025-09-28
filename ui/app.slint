@@ -16,7 +16,7 @@ export component MainWindow inherits Window {
   callback stop_qr_scanner();
   pure callback unix_time() -> duration;
 
-  property <Page> selected_page;
+  out property <Page> selected_page;
   property <Code> code_being_edited;
 
   forward-focus: focus;
